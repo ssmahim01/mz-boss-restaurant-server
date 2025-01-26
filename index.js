@@ -4,12 +4,14 @@ require('dotenv').config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const cors = require('cors');
+const { default: axios } = require('axios');
 const port = process.env.PORT || 5000;
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ybs8l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -162,6 +164,48 @@ async function run() {
       res.send({ paymentResult, deleteResult });
     });
 
+    app.post("/ssl-commerz-payments", async (req, res) => {
+      const paymentInfo = req.body;
+      // console.log(paymentInfo);
+
+      const trxId = new ObjectId().toString();
+      paymentInfo.transactionId = trxId;
+
+      const initiate = {
+        store_id: "mzbos679506ce5863c",
+        store_passwd: "mzbos679506ce5863c@ssl",
+        total_amount: paymentInfo.price,
+        currency: 'BDT',
+        tran_id: trxId,
+        success_url: 'http://localhost:5000/success-payment',
+        fail_url: 'http://localhost:5173/fail',
+        cancel_url: 'http://localhost:5173/cancel',
+        ipn_url: 'http://localhost:5000/ipn-success-payment',
+        shipping_method: 'Courier',
+        cus_email: `${paymentInfo.email}`,
+        ship_country: 'Bangladesh',
+      };
+
+      const response = await axios({
+        url: "https://sandbox.sslcommerz.com/gwprocess/v3/api.php",
+        method: "POST",
+        data: initiate,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        }
+      })
+
+      const insertData = await paymentCollection.insertOne(paymentInfo);
+      const gatewayUrl = response?.data?.GatewayPageURL;
+
+      res.send({insertData, gatewayUrl});
+    });
+
+    app.post("/success-payment", async(req, res) => {
+      const paymentSuccess = req.body;
+      console.log(paymentSuccess);
+    })
+
     // Stats
 
     app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
@@ -209,7 +253,7 @@ async function run() {
           $group: {
             _id: '$menuItems.category',
             quantity: { $sum: 1 },
-            revenue: {$sum: '$menuItems.price'}
+            revenue: { $sum: '$menuItems.price' }
           }
         },
         {
