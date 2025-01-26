@@ -172,17 +172,36 @@ async function run() {
       paymentInfo.transactionId = trxId;
 
       const initiate = {
-        store_id: "mzbos679506ce5863c",
-        store_passwd: "mzbos679506ce5863c@ssl",
+        store_id: `${process.env.SSL_STORE_ID}`,
+        store_passwd: `${process.env.SSL_STORE_PASS}`,
         total_amount: paymentInfo.price,
         currency: 'BDT',
         tran_id: trxId,
         success_url: 'http://localhost:5000/success-payment',
-        fail_url: 'http://localhost:5173/fail',
-        cancel_url: 'http://localhost:5173/cancel',
+        fail_url: 'http://localhost:5173/dashboard/cart',
+        cancel_url: 'http://localhost:5173/dashboard/payment',
         ipn_url: 'http://localhost:5000/ipn-success-payment',
         shipping_method: 'Courier',
         cus_email: `${paymentInfo.email}`,
+        shipping_method: 'Courier',
+        product_name: 'Computer.',
+        product_category: 'Electronic',
+        product_profile: 'general',
+        cus_name: 'Customer Name',
+        cus_add1: 'Dhaka',
+        cus_add2: 'Dhaka',
+        cus_city: 'Dhaka',
+        cus_state: 'Dhaka',
+        cus_postcode: '1000',
+        cus_country: 'Bangladesh',
+        cus_phone: '01711111111',
+        cus_fax: '01711111111',
+        ship_name: 'Customer Name',
+        ship_add1: 'Dhaka',
+        ship_add2: 'Dhaka',
+        ship_city: 'Dhaka',
+        ship_state: 'Dhaka',
+        ship_postcode: 1000,
         ship_country: 'Bangladesh',
       };
 
@@ -198,13 +217,40 @@ async function run() {
       const insertData = await paymentCollection.insertOne(paymentInfo);
       const gatewayUrl = response?.data?.GatewayPageURL;
 
-      res.send({insertData, gatewayUrl});
+      res.send({ insertData, gatewayUrl });
     });
 
-    app.post("/success-payment", async(req, res) => {
+    app.post("/success-payment", async (req, res) => {
       const paymentSuccess = req.body;
-      console.log(paymentSuccess);
-    })
+      // console.log(paymentSuccess);
+
+      const { data } = await axios.get(`https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=${process.env.SSL_STORE_ID}&store_passwd=${process.env.SSL_STORE_PASS}`);
+
+      if (data.status !== "VALID") {
+        return res.send({ message: "Invalid payment" })
+      }
+
+      const findByTrId = {transactionId: data.tran_id};
+      const updateStatus = {
+        $set: {
+          status: "Success"
+        }
+      }
+      
+      const filter = {
+        transactionId: data.tran_id
+      };
+      const payment = await paymentCollection.findOne(filter);
+      const updatePaymentInfo = await paymentCollection.updateOne(findByTrId, updateStatus);
+
+      const query = {
+        _id: {
+          $in: payment.cartIds.map(id => new ObjectId(id))
+        }
+      };
+      const deleteResult = await cartCollection.deleteMany(query);
+      res.redirect("http://localhost:5173/dashboard/payment-history");
+    });
 
     // Stats
 
